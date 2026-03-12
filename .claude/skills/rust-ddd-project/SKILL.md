@@ -160,11 +160,34 @@ impl UserService {
 
 ### Domain `routes.rs`
 
-Routes are thin. They parse HTTP input, call the service, and return HTTP output.
+Routes are a **serde/adapter layer** only. They adapt data between HTTP and the service layer.
+
+**Responsibilities:**
+- Parse HTTP input (path params, query params, request body) into domain types
+- Call service methods
+- Transform service output into HTTP responses (status codes, response body)
+
+**NOT responsible for:**
+- Business logic
+- Validation (beyond basic type checking)
+- Data transformation
+- Decision making
 
 ```rust
+use super::models::CreateUser;
 use super::services::UserService;
 use std::sync::Arc;
+use your_web_framework::{Json, Path, State};
+
+/// HTTP handler - thin serde adapter only
+pub async fn create_user(
+    State(service): State<Arc<UserService>>,
+    Json(input): Json<CreateUser>,  // Deserialize HTTP body -> domain type
+) -> Result<Json<serde_json::Value>, Error> {
+    // Call service, transform result -> HTTP response
+    let user = service.create_user(input).await?;
+    Ok(Json(serde_json::to_value(user)?))
+}
 
 /// Register this domain's routes with your router.
 /// The exact signature depends on your web framework.
@@ -396,7 +419,7 @@ users/
 | Giant `common/` module | Common becomes a second monolith | Only move code to common when used by 2+ domains |
 | All models in `common/models/` | Domains lose ownership of their data | Keep domain models in the domain; share only cross-domain types |
 | Circular domain dependencies | `users` depends on `orders` depends on `users` | Use events or extract shared logic to `common/` |
-| Business logic in `routes.rs` | Routes become untestable, coupled to HTTP | Routes should only parse input, call service, return output |
+| Business logic in `routes.rs` | Routes become untestable, coupled to HTTP | Routes are a serde/adapter layer only: deserialize input → call service → serialize output. No business logic. |
 | Business logic in `repository.rs` | Data access layer does validation/transformation | Repository does CRUD only; business rules live in `services.rs` |
 
 ## Usage
